@@ -1,0 +1,5 @@
+services:
+  sevengg:
+    build: .
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}

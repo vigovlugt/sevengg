@@ -5,7 +5,7 @@ use serenity::{prelude::{GatewayIntents, EventHandler, Context}, model::prelude:
 
 const SEVENTV_URL: &str = "https://7tv.io/v3/gql";
 
-const PAGES: u32 = 1;
+const PAGES: u32 = 10;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Emote {
@@ -83,8 +83,6 @@ struct DiscordHandler {
 #[async_trait::async_trait]
 impl EventHandler for DiscordHandler {
     async fn message(&self, ctx: Context, msg: Message){
-        println!("Message: {:?}", msg);
-
         let content = msg.content.clone();
 
         let emote = self.emote_map.get(&content);
