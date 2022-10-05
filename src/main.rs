@@ -6,6 +6,7 @@ use serenity::{
     prelude::{Context, EventHandler, GatewayIntents},
     Client,
 };
+use uwuifier::uwuify_str_sse;
 
 const SEVENTV_URL: &str = "https://7tv.io/v3/gql";
 
@@ -55,7 +56,14 @@ async fn get_emotes() -> color_eyre::Result<HashMap<String, Emote>> {
         get_category_emotes("TOP", PAGES, 3),
         get_category_emotes("TOP", PAGES, 4),
     );
-    let top = [top1?.as_slice(), top2?.as_slice(), top3?.as_slice(), top4?.as_slice(), top5?.as_slice()].concat();
+    let top = [
+        top1?.as_slice(),
+        top2?.as_slice(),
+        top3?.as_slice(),
+        top4?.as_slice(),
+        top5?.as_slice(),
+    ]
+    .concat();
     let trending = trending?;
 
     let mut map = HashMap::new();
@@ -117,27 +125,45 @@ impl EventHandler for DiscordHandler {
 
         let emote = self.emote_map.get(&content);
 
-        let emote = match emote {
-            Some(e) => e,
-            None => return,
-        };
+        if let Some(emote) = emote {
+            let is_png = emote.images.iter().any(|e| e.format == "PNG");
 
-        let is_png = emote.images.iter().any(|e| e.format == "PNG");
+            let extension = if is_png { "png" } else { "gif" };
 
-        let extension = if is_png { "png" } else { "gif" };
+            let _ = tokio::join!(
+                msg.delete(&ctx.http),
+                msg.channel_id
+                    .say(&ctx.http, format!("**{}**", msg.author.name)),
+                msg.channel_id.say(
+                    &ctx.http,
+                    format!("https://cdn.7tv.app/emote/{}/2x.{}", emote.id, extension),
+                )
+            );
+        } else {
+            if !content.is_empty()
+                && !content.starts_with("http://")
+                && !content.starts_with("https://")
+                && msg.attachments.is_empty()
+                && msg.embeds.is_empty()
+                && msg.activity.is_none()
+                && msg.application.is_none()
+                && msg.referenced_message.is_none()
+                && msg.kind == serenity::model::channel::MessageType::Regular
+            {
+                let percentage = 1.0 / 100.0;
 
-        let _ = msg.delete(&ctx.http).await;
-        let _ = msg
-            .channel_id
-            .say(&ctx.http, format!("**{}**", msg.author.name))
-            .await;
-        let _ = msg
-            .channel_id
-            .say(
-                &ctx.http,
-                format!("https://cdn.7tv.app/emote/{}/2x.{}", emote.id, extension),
-            )
-            .await;
+                let uwu_message = uwuify_str_sse(&content);
+
+                if rand::random::<f64>() < percentage {
+                    let _ = tokio::join!(
+                        msg.delete(&ctx.http),
+                        msg.channel_id
+                            .say(&ctx.http, format!("**{}**", msg.author.name)),
+                        msg.channel_id.say(&ctx.http, uwu_message)
+                    );
+                }
+            }
+        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
