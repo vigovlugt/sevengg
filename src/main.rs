@@ -16,7 +16,13 @@ const PAGES: u32 = 10;
 struct Emote {
     id: String,
     name: String,
-    images: Vec<EmoteImage>,
+    host: EmoteHost,
+    animated: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct EmoteHost {
+    files: Vec<EmoteImage>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -32,10 +38,13 @@ fn create_query(pages: u32, category: &str, page_offset: u32) -> String {
             r#"
             page{}: emotes(query: "", page: {}, limit: 300, filter: {{category: {}, exact_match: false, case_sensitive: false, ignore_tags: false}}) {{
                 items {{
+                    animated
                     id
                     name
-                    images {{
-                        format
+                    host {{
+                        files {{
+                            format
+                        }}
                     }}
                 }}
             }}
@@ -126,19 +135,20 @@ impl EventHandler for DiscordHandler {
         let emote = self.emote_map.get(&content);
 
         if let Some(emote) = emote {
-            let is_png = emote.images.iter().any(|e| e.format == "PNG");
-
-            let extension = if is_png { "png" } else { "gif" };
+            let extension = if !emote.animated { "png" } else { "gif" };
 
             let _ = tokio::join!(
                 msg.delete(&ctx.http),
                 msg.channel_id
-                    .say(&ctx.http, format!("**{}**", msg.author.name)),
-                msg.channel_id.say(
+                    .say(&ctx.http, format!("**{}**", msg.author.name))
+            );
+            let _ = msg
+                .channel_id
+                .say(
                     &ctx.http,
                     format!("https://cdn.7tv.app/emote/{}/2x.{}", emote.id, extension),
                 )
-            );
+                .await;
         } else {
             if !content.is_empty()
                 && !content.starts_with("http://")
@@ -149,12 +159,13 @@ impl EventHandler for DiscordHandler {
                 && msg.application.is_none()
                 && msg.referenced_message.is_none()
                 && msg.kind == serenity::model::channel::MessageType::Regular
+                && !msg.author.bot
             {
                 let percentage = 1.0 / 100.0;
+                let random_float = rand::random::<f64>();
 
-                let uwu_message = uwuify_str_sse(&content);
-
-                if rand::random::<f64>() < percentage {
+                if random_float < percentage {
+                    let uwu_message = uwuify_str_sse(&content);
                     let _ = tokio::join!(
                         msg.delete(&ctx.http),
                         msg.channel_id
