@@ -10,7 +10,7 @@ use uwuifier::uwuify_str_sse;
 
 const SEVENTV_URL: &str = "https://7tv.io/v3/gql";
 
-const PAGES: u32 = 10;
+const PAGES: u32 = 1;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Emote {
