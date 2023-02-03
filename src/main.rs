@@ -150,6 +150,7 @@ impl EventHandler for DiscordHandler {
                 )
                 .await;
         } else {
+            let uwu_message = uwuify_str_sse(&content);
             if !content.is_empty()
                 && !content.starts_with("http://")
                 && !content.starts_with("https://")
@@ -160,12 +161,14 @@ impl EventHandler for DiscordHandler {
                 && msg.referenced_message.is_none()
                 && msg.kind == serenity::model::channel::MessageType::Regular
                 && !msg.author.bot
+                && uwu_message != content
             {
                 let percentage = 1.0 / 100.0;
                 let random_float = rand::random::<f64>();
 
+                let uwu_message = uwuify_str_sse(&(content + "."));
+
                 if random_float < percentage {
-                    let uwu_message = uwuify_str_sse(&content);
                     let _ = tokio::join!(
                         msg.delete(&ctx.http),
                         msg.channel_id
