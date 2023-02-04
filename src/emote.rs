@@ -17,3 +17,8 @@ pub struct EmoteHost {
 pub struct EmoteImage {
     pub format: String,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EmoteSetEmote {
+    pub data: Emote,
+}

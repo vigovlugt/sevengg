@@ -3892,6 +3892,7 @@ dependencies = [
  "async-trait",
  "color-eyre",
  "dotenv",
+ "futures",
  "prisma-client-rust",
  "prisma-client-rust-cli",
  "rand 0.8.5",

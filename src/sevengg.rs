@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use reqwest::Client;
 use serde_json::Value;
 
-use crate::{emote::Emote, generated::prisma::PrismaClient};
+use crate::{
+    emote::{Emote, EmoteSetEmote},
+    generated::prisma::PrismaClient,
+};
 
 const SEVENTV_URL: &str = "https://7tv.io/v3/gql";
 
@@ -17,9 +20,9 @@ pub fn create_category_query(pages: u32, category: &str, page_offset: u32) -> St
             r#"
             page{}: emotes(query: "", page: {}, limit: 300, filter: {{category: {}, exact_match: false, case_sensitive: false, ignore_tags: false}}) {{
                 items {{
-                    animated
                     id
                     name
+                    animated
                     host {{
                         files {{
                             format
@@ -82,9 +85,9 @@ pub async fn get_emotes(
     ]
     .concat();
 
-    let db_emotes = db.emote().find_many(vec![]).exec().await?;
+    let db_emotes = db.guild_emotes().find_many(vec![]).exec().await?;
 
-    let ids: Vec<String> = db_emotes.iter().map(|e| e.id.clone()).collect();
+    let ids: Vec<String> = db_emotes.iter().map(|e| e.emote_id.clone()).collect();
     let db_emotes = get_emotes_by_id(client, &ids).await?;
 
     let mut map = HashMap::new();
@@ -134,9 +137,9 @@ pub async fn get_emotes_by_name(
                 r#"
                 emote_{}: emotes(query: "{}", page: 1, limit: 300, filter: {{category: TOP, exact_match: true, case_sensitive: true, ignore_tags: false}}) {{
                     items {{
-                        animated
                         id
                         name
+                        animated
                         host {{
                             files {{
                                 format
@@ -173,16 +176,22 @@ pub async fn get_emotes_by_id(
     client: &Client,
     ids: &Vec<String>,
 ) -> color_eyre::Result<HashMap<String, Emote>> {
-    let query = {
-        let mut query = String::new();
-        query.push_str("query {");
-        for id in ids.iter() {
-            query.push_str(&format!(
-                r#"
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut emotes = HashMap::new();
+
+    for ids in ids.chunks(10) {
+        let query = {
+            let mut query = "query {".to_owned();
+            for id in ids.iter() {
+                query.push_str(&format!(
+                    r#"
                 emote_{}: emote(id: "{}") {{
-                    animated
                     id
                     name
+                    animated
                     host {{
                         files {{
                             format
@@ -190,7 +199,55 @@ pub async fn get_emotes_by_id(
                     }}
                 }}
                 "#,
-                id, id
+                    id, id
+                ));
+            }
+            query.push_str("}");
+            query
+        };
+
+        let res = seventv_request(&client, &query).await?;
+
+        for id in ids {
+            let emote =
+                serde_json::from_value::<Emote>(res["data"][&format!("emote_{}", id)].to_owned())?;
+            emotes.insert(emote.id.clone(), emote);
+        }
+    }
+
+    Ok(emotes)
+}
+
+pub async fn get_emotes_by_channels(
+    client: &Client,
+    channels: &Vec<String>,
+) -> color_eyre::Result<HashMap<String, Emote>> {
+    if channels.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let query = {
+        let mut query = String::new();
+        query.push_str("query {");
+        for channel in channels.iter() {
+            query.push_str(&format!(
+                r#"
+                channel_{}: emoteSet(id: "{}") {{
+                    emotes {{
+                        data {{
+                            id
+                            name
+                            animated
+                            host {{
+                                files {{
+                                    format
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+                "#,
+                channel, channel
             ));
         }
         query.push_str("}");
@@ -200,11 +257,13 @@ pub async fn get_emotes_by_id(
     let res = seventv_request(&client, &query).await?;
 
     let mut emotes = HashMap::new();
-    for id in ids {
-        println!("{:#?}", res);
-        let emote =
-            serde_json::from_value::<Emote>(res["data"][&format!("emote_{}", id)].to_owned())?;
-        emotes.insert(emote.id.clone(), emote);
+    for channel in channels {
+        let emote_list = serde_json::from_value::<Vec<EmoteSetEmote>>(
+            res["data"][&format!("channel_{}", channel)]["emotes"].to_owned(),
+        )?;
+        for emote in emote_list {
+            emotes.insert(emote.data.id.clone(), emote.data);
+        }
     }
 
     Ok(emotes)

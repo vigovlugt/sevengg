@@ -1,3 +1,5 @@
+pub mod commands;
+pub mod db;
 pub mod emote;
 pub mod generated;
 pub mod sevengg;
@@ -8,23 +10,17 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use commands::addemote;
 use emote::Emote;
 use generated::prisma::PrismaClient;
 use serenity::{
-    model::{
-        application::interaction::InteractionResponseType,
-        prelude::{
-            command::CommandOptionType,
-            interaction::{application_command::CommandDataOptionValue, Interaction},
-            GuildId, Message, Ready,
-        },
-    },
+    model::prelude::{interaction::Interaction, GuildId, Message, Ready},
     prelude::{Context, EventHandler, GatewayIntents},
     Client,
 };
 use uwuifier::uwuify_str_sse;
 
-use crate::sevengg::{get_emotes, get_emotes_by_id, get_emotes_by_name};
+use crate::sevengg::get_emotes;
 
 struct DiscordHandler {
     emote_map: Arc<RwLock<HashMap<String, Emote>>>,
@@ -42,18 +38,23 @@ impl EventHandler for DiscordHandler {
         if let Some(emote) = emote {
             let extension = if !emote.animated { "png" } else { "gif" };
 
+            async fn send_msg(ctx: &Context, msg: &Message, emote: &Emote, extension: &str) {
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                let _ = msg
+                    .channel_id
+                    .say(
+                        &ctx.http,
+                        format!("https://cdn.7tv.app/emote/{}/2x.{}", emote.id, extension),
+                    )
+                    .await;
+            }
+
             let _ = tokio::join!(
                 msg.delete(&ctx.http),
                 msg.channel_id
-                    .say(&ctx.http, format!("**{}**", msg.author.name))
+                    .say(&ctx.http, format!("**{}**", msg.author.name)),
+                send_msg(&ctx, &msg, &emote, extension)
             );
-            let _ = msg
-                .channel_id
-                .say(
-                    &ctx.http,
-                    format!("https://cdn.7tv.app/emote/{}/2x.{}", emote.id, extension),
-                )
-                .await;
         } else {
             let uwu_message = uwuify_str_sse(&content);
             if !content.is_empty()
@@ -96,23 +97,7 @@ impl EventHandler for DiscordHandler {
         );
 
         let _ = guild_id
-            .create_application_command(&ctx.http, |command| {
-                command
-                    .name("addemote")
-                    .description("Add an emote to the bot by name or id")
-                    .create_option(|option| {
-                        option
-                            .name("id")
-                            .description("The id of the emote")
-                            .kind(CommandOptionType::String)
-                    })
-                    .create_option(|option| {
-                        option
-                            .name("name")
-                            .description("The name of the emote")
-                            .kind(CommandOptionType::String)
-                    })
-            })
+            .create_application_command(&ctx.http, addemote::creator)
             .await
             .unwrap();
     }
@@ -121,84 +106,10 @@ impl EventHandler for DiscordHandler {
         if let Interaction::ApplicationCommand(command) = interaction {
             match command.data.name.as_str() {
                 "addemote" => {
-                    if command.data.options.len() != 1 {
-                        let _ = command
-                            .create_interaction_response(&ctx.http, |response| {
-                                response
-                                    .kind(InteractionResponseType::ChannelMessageWithSource)
-                                    .interaction_response_data(|message| {
-                                        message.content("Please provide either an emote id or name")
-                                    })
-                            })
-                            .await;
-                        return;
-                    }
-
-                    let option = &command.data.options[0];
-                    let name = option.name.as_str();
-
-                    let values = if let Some(value) = &option.resolved {
-                        if let CommandDataOptionValue::String(string) = value {
-                            string
-                                .to_string()
-                                .split(",")
-                                .map(|s| s.to_owned())
-                                .collect()
-                        } else {
-                            vec![]
-                        }
-                    } else {
-                        vec![]
-                    };
-
-                    let emotes = match name {
-                        "id" => get_emotes_by_id(&self.client, &values).await,
-                        "name" => get_emotes_by_name(&self.client, &values).await,
-                        _ => {
-                            return;
-                        }
-                    };
-
-                    match emotes {
-                        Ok(emotes) => {
-                            for (name, emote) in emotes {
-                                self.emote_map
-                                    .write()
-                                    .unwrap()
-                                    .insert(emote.name.clone(), emote);
-                                println!(
-                                    "Emote: {} {:?}",
-                                    name,
-                                    self.emote_map.read().unwrap().get(&name)
-                                );
-                            }
-                            println!("Emotes: {:?}", self.emote_map.read().unwrap().len());
-
-                            let _ = command
-                                .create_interaction_response(&ctx.http, |response| {
-                                    response
-                                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                                        .interaction_response_data(|message| {
-                                            message.content("Added emote(s)!")
-                                        })
-                                })
-                                .await;
-                        }
-                        Err(e) => {
-                            println!("Error while getting emotes: {:?}", e);
-                            let _ = command
-                                .create_interaction_response(&ctx.http, |response| {
-                                    response
-                                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                                        .interaction_response_data(|message| {
-                                            message.content("Failed to get emotes")
-                                        })
-                                })
-                                .await;
-                        }
-                    }
+                    addemote::handler(&self.client, &self.emote_map, &self.db, &ctx, &command)
+                        .await;
                 }
-                _ => println!("Unknown command: {:?}", command.data.name),
+                _ => {}
             }
         }
     }

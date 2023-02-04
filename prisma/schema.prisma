@@ -10,8 +10,8 @@ generator client {
   output   = "../src/generated/prisma.rs"
 }
 
-model Emote {
-  id      String @id
+model GuildEmotes {
+  id      String @id @default(uuid())
   name    String
   guildId String
   emoteId String
