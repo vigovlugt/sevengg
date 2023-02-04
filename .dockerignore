@@ -4,3 +4,4 @@ Dockerfile
 docker-compose.yml
 /target
 database.db
+src/generated/*
